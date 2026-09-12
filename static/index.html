@@ -198,6 +198,7 @@
   .drawer.open { transform: translateX(0); }
   .drawer-head {
     display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
   }
   .drawer-head button {
     font: inherit; font-size: 12.5px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
@@ -267,6 +268,19 @@
     display: inline-flex; align-items: center; gap: 5px;
   }
   .mini-btn:hover { color: var(--text); }
+
+  /* 快捷键 */
+  .hotrow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .hotrow .lbl { flex: 1; font-size: 13px; color: var(--text-2); }
+  .hotkey-btn {
+    font: inherit; font-size: 12px; min-width: 110px; text-align: center;
+    color: var(--text); background: var(--surface-2); border: 1px solid var(--border-strong);
+    border-radius: 8px; padding: 6px 10px; cursor: pointer;
+  }
+  .hotkey-btn:hover { border-color: rgba(255,255,255,.25); }
+  .hotkey-btn.capturing { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .hotkey-btn.empty { color: var(--text-3); }
+  .hotkey-warn { font-size: 11.5px; color: var(--red); margin-top: 4px; }
 
   /* 遮罩 */
   .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 15; display: none; }
@@ -367,6 +381,7 @@
     <button class="on" data-pane="bg" onclick="switchPane('bg', this)">我的背景</button>
     <button data-pane="bank" onclick="switchPane('bank', this)">题库</button>
     <button data-pane="cfg" onclick="switchPane('cfg', this)">AI 设置</button>
+    <button data-pane="hot" onclick="switchPane('hot', this)">快捷键</button>
     <button data-pane="hist" onclick="switchPane('hist', this)">会话记录</button>
     <button data-pane="brief" onclick="switchPane('brief', this)">速览</button>
     <span class="spacer"></span>
@@ -425,6 +440,12 @@
       </div>
       <div id="bank-list"></div>
       <div class="tip">命中路径有两条：本地词面匹配（毫秒级秒出）；未命中时题库整体进 AI 上下文，由模型语义检索，命中同样原样输出（标注「题库命中」）。没进题库的问题才走纯 AI 生成。回答后可点「收进题库」积累。</div>
+    </div>
+    <div class="pane" id="pane-hot">
+      <div id="hotkey-list"></div>
+      <div class="hotkey-warn" id="hotkey-warn"></div>
+      <div class="tip">点击后按下想要的按键（支持 Ctrl/Alt/Shift 组合键），Esc 取消。打字时快捷键不触发；设置为「未设置」则停用该动作。</div>
+      <button class="mini-btn" style="margin-top:8px" onclick="resetHotkeys()">恢复默认</button>
     </div>
     <div class="pane" id="pane-hist">
       <div id="history"><div class="tip">本场暂无问答</div></div>
@@ -688,12 +709,7 @@ function resumeListen() {
   $('mic-text').textContent = $('auto-mode').checked ? '自动聆听中' : '聆听中';
   if (!recogOn) toggleMic();
 }
-document.addEventListener('keydown', e => {
-  if (paused && e.code === 'Space' && !['TEXTAREA', 'INPUT'].includes(e.target.tagName)) {
-    e.preventDefault();
-    resumeListen();
-  }
-});
+/* （恢复聆听的快捷键见「快捷键系统」，默认 Space，可在设置中改） */
 function autoTrigger() {
   if (!recogOn || generating) { if (generating) silenceTimer = setTimeout(autoTrigger, 1500); return; }
   const text = finalText.trim();
@@ -839,6 +855,102 @@ function refine(extra) {
   chatLog.push({ role: 'user', content: `（补充要求：${extra}）` });
   save('iv_sessions', sessions);
 }
+/* ---- 快捷键系统 ---- */
+const HOTKEY_ACTIONS = [
+  { id: 'mic', label: '开始 / 停止录音' },
+  { id: 'generate', label: '生成回答' },
+  { id: 'resume', label: '恢复聆听（下一题）' },
+  { id: 'copy', label: '复制答案' },
+  { id: 'bank', label: '收进题库' },
+  { id: 'regen', label: '重新生成当前问题' },
+];
+const HOTKEY_DEFAULTS = { mic: 'F2', generate: 'Enter', resume: 'Space', copy: '', bank: '', regen: '' };
+let hotkeys = Object.assign({}, HOTKEY_DEFAULTS, load('iv_hotkeys', {}));
+let capturing = null;
+
+const KEY_NAMES = { Space: 'Space', Enter: 'Enter', Tab: 'Tab', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backslash: '\\' };
+function keyString(e) {
+  const parts = [];
+  if (e.ctrlKey) parts.push('Ctrl');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+  if (e.metaKey) parts.push('Meta');
+  const code = e.code || '';
+  parts.push(KEY_NAMES[code] || code.replace(/^Key|^Digit/, '') || '?');
+  return parts.join('+');
+}
+function renderHotkeys() {
+  $('hotkey-list').innerHTML = HOTKEY_ACTIONS.map(a => `
+    <div class="hotrow">
+      <span class="lbl">${a.label}</span>
+      <button class="hotkey-btn ${capturing === a.id ? 'capturing' : ''} ${!hotkeys[a.id] ? 'empty' : ''}" onclick="captureKey('${a.id}')" title="点击后按下想要的按键">${capturing === a.id ? '按下按键…' : (hotkeys[a.id] || '未设置')}</button>
+      <button class="hotkey-btn" style="min-width:auto;padding:5px 9px" title="清除该快捷键" onclick="clearHotkey('${a.id}')">×</button>
+    </div>`).join('');
+  // 冲突提示
+  const seen = {};
+  let warn = '';
+  for (const a of HOTKEY_ACTIONS) {
+    const k = hotkeys[a.id];
+    if (!k) continue;
+    if (seen[k]) warn += `「${a.label}」与「${seen[k]}」绑定了同一个键（${k}），后设置的生效。`;
+    seen[k] = a.label;
+  }
+  $('hotkey-warn').textContent = warn;
+  $('mic-btn').title = `开始/停止听音${hotkeys.mic ? ' (' + hotkeys.mic + ')' : ''}`;
+}
+function captureKey(id) {
+  capturing = capturing === id ? null : id;
+  renderHotkeys();
+}
+function clearHotkey(id) {
+  hotkeys[id] = '';
+  save('iv_hotkeys', hotkeys);
+  renderHotkeys();
+}
+function resetHotkeys() {
+  hotkeys = { ...HOTKEY_DEFAULTS };
+  save('iv_hotkeys', hotkeys);
+  renderHotkeys();
+}
+/* 捕获阶段优先处理：绑定中的按键录入 */
+document.addEventListener('keydown', e => {
+  if (!capturing) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.key === 'Escape') { capturing = null; renderHotkeys(); return; }
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+  const s = keyString(e);
+  const dup = HOTKEY_ACTIONS.find(a => a.id !== capturing && hotkeys[a.id] === s);
+  if (dup) hotkeys[dup.id] = '';
+  hotkeys[capturing] = s;
+  capturing = null;
+  save('iv_hotkeys', hotkeys);
+  renderHotkeys();
+}, true);
+/* 快捷键分发：打字时不触发 */
+function flashStatus(msg) {
+  $('net-status').textContent = msg;
+  setTimeout(() => { $('net-status').textContent = ''; }, 1500);
+}
+document.addEventListener('keydown', e => {
+  if (capturing) return;
+  if (['TEXTAREA', 'INPUT', 'SELECT'].includes(e.target.tagName)) return;
+  const s = keyString(e);
+  const act = Object.keys(hotkeys).find(k => hotkeys[k] && hotkeys[k] === s);
+  if (!act) return;
+  e.preventDefault();
+  if (act === 'mic') toggleMic();
+  else if (act === 'generate') generate();
+  else if (act === 'resume' && paused) resumeListen();
+  else if (act === 'copy' && lastAnswer) {
+    navigator.clipboard.writeText(lastAnswer);
+    flashStatus('已复制到剪贴板');
+  }
+  else if (act === 'bank' && lastAnswer) { saveToBank(); flashStatus('已收进题库'); }
+  else if (act === 'regen' && lastQuestion && !generating) generate(null, lastQuestion);
+});
+renderHotkeys();
+
 function copyAnswer(btn) {
   navigator.clipboard.writeText(lastAnswer).then(() => {
     btn.textContent = '已复制'; setTimeout(() => btn.textContent = '复制', 1200);
