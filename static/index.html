@@ -439,7 +439,7 @@
         <button class="mini-btn" onclick="bankClear()">清空</button>
       </div>
       <div id="bank-list"></div>
-      <div class="tip">命中路径有两条：本地词面匹配（毫秒级秒出）；未命中时题库整体进 AI 上下文，由模型语义检索，命中同样原样输出（标注「题库命中」）。没进题库的问题才走纯 AI 生成。回答后可点「收进题库」积累。</div>
+      <div class="tip">问题与题库匹配时，会把你的准备稿交给 AI 结合 JD 和具体问法微调后输出（保留事实，不照搬原文）；未匹配则正常生成。回答后可点「收进题库」积累。</div>
     </div>
     <div class="pane" id="pane-hot">
       <div id="hotkey-list"></div>
@@ -765,8 +765,8 @@ async function callAI(messages, onDelta) {
   }
 }
 const BANK_RETRIEVAL_PROMPT = `【候选人题库】以下是候选人提前准备好的问答。判断当前面试官的问题是否与题库中某条语义匹配（换种问法也算，不要求逐字一致）：
-- 匹配：直接原样输出那条答案的完整内容，并在最前面加「[题库] 」标记，不要改写、不要补充。
-- 不匹配：忽略题库，按你原本的规则正常回答，不要加标记。
+- 匹配：以那条准备答案为基础微调后回答——贴合当前问题的具体问法，保持第一人称口语，保留其中的事实、项目与数据，不要照搬原句，也不要编造新事实。
+- 不匹配：忽略题库，按你原本的规则正常回答。
 
 `;
 function buildMessages(question, extra) {
@@ -802,43 +802,27 @@ async function generate(extra, forcedQuestion) {
   $('live-badge').classList.add('on');
   lastQuestion = q; lastAnswer = '';
   renderQ(q);
-  /* 题库优先：命中即秒出，不走 AI */
+  /* 本地匹配命中的题库卡片，作为参考稿交给 AI 微调（不再原样直出） */
   const m = matchBank(q);
   $('bank-badge').classList.remove('on');
   hideSuspect();
+  let msgs = buildMessages(q, extra);
   if (m.hit) {
-    lastAnswer = m.hit.card.a;
-    box.classList.remove('empty'); box.classList.remove('streaming');
-    box.textContent = lastAnswer;
-    $('bank-badge').textContent = `题库命中 ${m.hit.pct}%`;
+    msgs.splice(1, 0, {
+      role: 'system',
+      content: `面试官刚才的问题，与候选人提前准备的这条问答高度匹配：\n准备的问题：${m.hit.card.q}\n候选人准备回答：${m.hit.card.a}\n\n请以这份准备稿为基础微调：贴合当前问题的具体问法和语气，保持第一人称口语，保留其中的事实、项目与数据，不要照搬原句，也不要编造新事实。`
+    });
+    $('bank-badge').textContent = '题库命中 · 已按问法微调';
     $('bank-badge').classList.add('on');
-    chatLog.push({ role: 'user', content: q }, { role: 'assistant', content: lastAnswer });
-    save('iv_sessions', sessions);
-    renderHistory();
-    $('refine-row').classList.add('show');
-    generating = false;
-    btn.disabled = false; btn.textContent = origText;
-    if (recogOn && hasSR && !isPhone) {
-      paused = true;
-      $('resume-btn').style.display = 'block';
-      $('mic-text').textContent = '暂停中：说「下一题」/按空格继续';
-    }
-    return;
+  } else if (m.suspect) {
+    showSuspect(m.suspect);
   }
-  if (m.suspect) showSuspect(m.suspect);
   try {
-    await callAI(buildMessages(q, extra), t => {
+    await callAI(msgs, t => {
       lastAnswer += t;
       box.textContent = lastAnswer.replace(/^\s*\[题库\]\s*/, '');
       box.scrollTop = box.scrollHeight;
     });
-    // AI 检索命中了题库（模型会打上标记）
-    if (/^\s*\[题库\]/.test(lastAnswer)) {
-      lastAnswer = lastAnswer.replace(/^\s*\[题库\]\s*/, '');
-      box.textContent = lastAnswer;
-      $('bank-badge').textContent = '题库命中 · AI 检索';
-      $('bank-badge').classList.add('on');
-    }
     chatLog.push({ role: 'user', content: q }, { role: 'assistant', content: lastAnswer });
     save('iv_sessions', sessions);
     renderHistory();
@@ -1026,6 +1010,7 @@ const ALIAS = [
   ['优点和缺点', '优缺点'], ['优点缺点', '优缺点'], ['优势和劣势', '优缺点'], ['优势劣势', '优缺点'],
   ['求职动机', '加入我们'], ['为什么想来', '为什么选择我们'], ['为什么加入我们', '为什么选择我们'],
   ['最大的挑战', '挑战'], ['最有挑战', '挑战'], ['遇到过什么困难', '挑战'], ['遇到什么困难', '挑战'],
+  ['最难搞的问题', '挑战'], ['最难的问题', '挑战'], ['棘手的问题', '挑战'], ['碰到', '遇到'], ['咋解决', '怎么解决'], ['咋处理', '怎么处理'],
   ['你怎么理解的', '的理解'], ['工作原理', '原理'],
 ];
 function normText(s) {
