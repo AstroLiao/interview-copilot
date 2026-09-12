@@ -383,7 +383,7 @@
     <button data-pane="cfg" onclick="switchPane('cfg', this)">AI 设置</button>
     <button data-pane="hot" onclick="switchPane('hot', this)">快捷键</button>
     <button data-pane="hist" onclick="switchPane('hist', this)">会话记录</button>
-    <button data-pane="brief" onclick="switchPane('brief', this)">速览</button>
+    <button data-pane="brief" onclick="switchPane('brief', this)">定制</button>
     <span class="spacer"></span>
     <button class="close" onclick="closeDrawer()">×</button>
   </div>
@@ -451,9 +451,13 @@
       <div id="history"><div class="tip">本场暂无问答</div></div>
     </div>
     <div class="pane" id="pane-brief">
-      <div class="tip" style="margin:0 0 8px">目标公司情报、岗位要求、人才画像、考察重点——写什么，AI 回答就往什么方向靠。</div>
-      <textarea id="brief" style="height:200px;font-size:13px;line-height:1.65" placeholder="示例：&#10;公司：某跨境电商公司，专注亚马逊平台，年销 1 亿+&#10;岗位：全栈开发工程师，考察底层潜力与项目经历&#10;人才画像：好奇、聪明、乐观、勇敢、自省&#10;文化：极聚焦、极有效、极高效"></textarea>
-      <div class="tip">存本地浏览器，不会进仓库。留空则按通用面试规则回答。</div>
+      <div class="tip" style="margin:0 0 8px">目标公司情报、人才画像、考察重点——写什么，AI 回答就往什么方向靠。</div>
+      <textarea id="brief" style="height:150px;font-size:13px;line-height:1.65" placeholder="示例：&#10;公司：某跨境电商公司，专注亚马逊平台，年销 1 亿+&#10;人才画像：好奇、聪明、乐观、勇敢、自省&#10;文化：极聚焦、极有效、极高效"></textarea>
+      <div class="field" style="margin-top:12px">
+        <label class="field-label">岗位 JD（把招聘要求的职责与任职要求贴进来，AI 会按 JD 要求组织回答）</label>
+        <textarea id="jd" style="height:150px;font-size:13px;line-height:1.65" placeholder="示例：&#10;岗位职责：&#10;1. 参与跨境电商中后台系统的设计与开发&#10;2. 使用 React + Node.js 完成前后端迭代…&#10;任职要求：&#10;1. 熟悉 TypeScript、MySQL、Redis&#10;2. 有高并发系统经验优先…"></textarea>
+      </div>
+      <div class="tip">以上均存本地浏览器，不会进仓库。留空则按通用面试规则回答。</div>
     </div>
   </div>
 </aside>
@@ -470,6 +474,9 @@ const SYSTEM_BASE = `你正在辅助候选人参加一场AI面试（候选人已
 
 【面试定制】
 {BRIEF}
+
+【目标岗位 JD】
+{JD}
 
 【候选人真实背景】
 {BG}
@@ -492,6 +499,7 @@ const hasSR = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 let cfg = load('iv_cfg', { base: 'https://ark.cn-beijing.volces.com/api/coding/v3', key: '', model: '', thinking: 'low', temperature: 0.7, maxTokens: 1500 });
 let background = load('iv_bg', '');
 let brief = load('iv_brief', '');
+let jd = load('iv_jd', '');
 let sessions = load('iv_sessions', {});
 let curId = load('iv_cur', '');
 let chatLog = [];
@@ -553,6 +561,7 @@ $('cfg-base').value = cfg.base; $('cfg-key').value = cfg.key; $('cfg-model').val
 $('cfg-temp').value = cfg.temperature ?? 0.7; $('cfg-maxtok').value = cfg.maxTokens ?? 1500;
 $('bg').value = background;
 $('brief').value = brief;
+$('jd').value = jd;
 if (!hasSR) { $('mic-btn').style.display = 'none'; $('mic-text').textContent = '浏览器不支持语音'; }
 if (isPhone) {
   $('send-btn').style.display = 'inline-flex';
@@ -582,6 +591,7 @@ $('cfg-thinking').addEventListener('change', () => { cfg = { ...cfg, thinking: $
 }));
 $('bg').addEventListener('input', () => { background = $('bg').value; save('iv_bg', background); });
 $('brief').addEventListener('input', () => { brief = $('brief').value; save('iv_brief', brief); });
+$('jd').addEventListener('input', () => { jd = $('jd').value; save('iv_jd', jd); });
 
 /* 问题输入：自动增高 + Enter 生成 */
 function autoGrow() {
@@ -762,6 +772,7 @@ const BANK_RETRIEVAL_PROMPT = `【候选人题库】以下是候选人提前准�
 function buildMessages(question, extra) {
   const sys = SYSTEM_BASE
     .replace('{BRIEF}', brief || '（未填写，按通用面试规则回答，不要编造公司信息）')
+    .replace('{JD}', jd || '（未填写，按通用全栈工程师岗位回答）')
     .replace('{BG}', background || '（暂无，基于通用全栈工程师经验回答，避免编造具体公司/项目名）');
   const msgs = [{ role: 'system', content: sys }];
   // 题库整体进上下文，由模型做语义检索；超长时只带本地匹配的前 20 名候选
