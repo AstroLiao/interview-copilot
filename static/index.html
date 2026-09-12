@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta name="theme-color" content="#0a0b0d">
+<title>Interview Copilot</title>
+<style>
+  /* Interview Copilot · 提词器式深色界面
+     设计判读：面试临场提词工具，沉稳聚焦，zinc暖黑 + 翡翠强调，VARIANCE 5 / MOTION 3 / DENSITY 4
+     圆角体系：面板16 / 控件10 / 胶囊999；动效仅语义性（录音、生成中） */
+  :root {
+    color-scheme: dark;
+    --bg: #0a0b0d;
+    --surface: #131418;
+    --surface-2: #1a1c21;
+    --surface-3: #22252c;
+    --border: rgba(255, 255, 255, .07);
+    --border-strong: rgba(255, 255, 255, .14);
+    --text: #e9eaee;
+    --text-2: #a2a8b3;
+    --text-3: #6b7280;
+    --accent: #2fbf8f;
+    --accent-soft: rgba(47, 191, 143, .12);
+    --red: #e5484d;
+    --radius-panel: 16px;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "MiSans", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
+    font-size: 14px; -webkit-font-smoothing: antialiased;
+  }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::selection { background: rgba(47, 191, 143, .3); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  svg.ic { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  button { touch-action: manipulation; }
+
+  /* ── 顶栏：会话 + 抽屉开关 ── */
+  header {
+    height: 50px; flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+    padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--bg);
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; }
+  .brand .mark { width: 20px; height: 20px; border-radius: 6px; background: var(--accent); position: relative; }
+  .brand .mark::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: #0a0b0d; }
+  header .spacer { flex: 1; }
+  .ghost {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: none; background: transparent; color: var(--text-2); cursor: pointer;
+    font: inherit; font-size: 13px; padding: 7px 10px; border-radius: var(--radius);
+    transition: color .15s, background .15s;
+  }
+  .ghost:hover { color: var(--text); background: var(--surface-2); }
+  #session-sel {
+    max-width: 220px; font: inherit; font-size: 12.5px; color: var(--text-2);
+    background: transparent; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 6px 8px; cursor: pointer; outline: none; font-variant-numeric: tabular-nums;
+  }
+  #session-sel:hover { color: var(--text); border-color: var(--border-strong); }
+  #session-sel option { background: var(--surface-2); color: var(--text); }
+  .switch { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-2); cursor: pointer; user-select: none; }
+  .switch input { display: none; }
+  .switch .track { width: 33px; height: 18px; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--border-strong); position: relative; transition: all .2s; }
+  .switch .track::after { content: ""; position: absolute; top: 2px; left: 2.5px; width: 12px; height: 12px; border-radius: 50%; background: #7d8492; transition: all .2s; }
+  .switch input:checked + .track { background: var(--accent-soft); border-color: var(--accent); }
+  .switch input:checked + .track::after { left: 15px; background: var(--accent); }
+
+  /* ── 提词舞台 ── */
+  .stage { flex: 1; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+  .stage-inner { width: min(860px, 100%); margin: 0 auto; padding: 30px 24px 20px; flex: 1; display: flex; flex-direction: column; }
+
+  /* 当前问题行 */
+  .q-block { display: flex; gap: 12px; align-items: baseline; min-height: 24px; }
+  .q-tag {
+    font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: 2px;
+    font-variant-numeric: tabular-nums; flex-shrink: 0;
+  }
+  .q-text { font-size: 15px; color: var(--text-2); line-height: 1.7; overflow-wrap: anywhere; }
+  .q-text:empty::before { content: "等待问题：开麦克风听音、手机推送，或直接输入"; color: var(--text-3); }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
+  .presets button {
+    font: inherit; font-size: 12px; color: var(--text-3); background: transparent;
+    border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; cursor: pointer;
+    transition: all .15s;
+  }
+  .presets button:hover { color: var(--accent); border-color: var(--accent); }
+  .presets.hide { display: none; }
+
+  /* 回答：提词主体 */
+  .a-block { margin-top: 22px; flex: 1; display: flex; flex-direction: column; }
+  #answer {
+    font-size: clamp(21px, 2.2vw, 25px); line-height: 2.05; letter-spacing: .01em;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+    color: var(--text); min-height: 200px;
+  }
+  #answer.empty { display: grid; place-items: center; flex: 1; }
+  #answer.empty::before {
+    content: attr(data-placeholder); color: var(--text-3); font-size: 14.5px;
+    line-height: 2; text-align: center; white-space: pre-line;
+  }
+  .streaming { animation: breathe 1.6s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity: .72; } }
+
+  /* 跟随答案的微调行 */
+  .refine-row {
+    display: none; gap: 6px; flex-wrap: wrap; margin-top: 26px; padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .refine-row.show { display: flex; }
+  .refine-row button {
+    font: inherit; font-size: 12.5px; color: var(--text-2); background: transparent;
+    border: 1px solid var(--border); border-radius: 999px; padding: 5px 13px; cursor: pointer;
+    transition: all .15s;
+  }
+  .refine-row button:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+  /* ── 底部操作坞 ── */
+  .dock {
+    flex-shrink: 0; border-top: 1px solid var(--border); background: var(--surface);
+    padding: 12px 16px; display: flex; gap: 10px; align-items: flex-end;
+  }
+  .dock-inner { width: min(860px, 100%); margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; }
+  #question {
+    flex: 1; border: 1px solid var(--border-strong); background: var(--surface-2);
+    border-radius: 14px; color: var(--text); font: inherit; font-size: 14.5px; line-height: 1.55;
+    padding: 11px 14px; resize: none; outline: none; height: 46px; max-height: 120px;
+    transition: border-color .15s; overflow-y: auto;
+  }
+  #question:focus { border-color: var(--accent); }
+  #question::placeholder { color: var(--text-3); }
+  .btn {
+    border: none; cursor: pointer; font: inherit; font-weight: 600; border-radius: 12px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    transition: all .15s; flex-shrink: 0;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-mic {
+    width: 46px; height: 46px; border-radius: 50%;
+    background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong);
+  }
+  .btn-mic:hover { color: var(--text); border-color: rgba(255,255,255,.25); }
+  .btn-mic.rec { background: rgba(229, 72, 77, .14); border-color: var(--red); color: var(--red); }
+  .btn-go {
+    height: 46px; padding: 0 20px; background: var(--accent); color: #06251a; font-size: 14.5px;
+  }
+  .btn-go:hover:not(:disabled) { filter: brightness(1.08); }
+  .btn-send { height: 46px; padding: 0 16px; background: var(--accent); color: #06251a; }
+
+  .dock-status {
+    display: flex; align-items: center; gap: 8px; padding: 0 4px 26px;
+    width: min(860px, 100%); margin: 0 auto; font-size: 12px; color: var(--text-3);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--surface-3); transition: background .2s; }
+  .dot.rec { background: var(--red); animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+  .wave { display: none; align-items: flex-end; gap: 2px; height: 11px; }
+  .wave.on { display: inline-flex; }
+  .wave i { width: 2.5px; background: var(--accent); border-radius: 1px; animation: wv 1s infinite ease-in-out; }
+  .wave i:nth-child(1) { height: 5px; } .wave i:nth-child(2) { height: 11px; animation-delay: .13s; }
+  .wave i:nth-child(3) { height: 8px; animation-delay: .26s; } .wave i:nth-child(4) { height: 12px; animation-delay: .39s; }
+  .wave i:nth-child(5) { height: 6px; animation-delay: .52s; }
+  @keyframes wv { 50% { transform: scaleY(.3); } }
+  .live { display: none; color: var(--accent); }
+  .live.on { display: inline-flex; align-items: center; gap: 5px; }
+
+  /* 恢复聆听横条 */
+  #resume-btn {
+    display: none; width: 100%; border: none; cursor: pointer; font: inherit; font-size: 13.5px;
+    padding: 10px; background: var(--accent-soft); color: var(--accent); border-bottom: 1px solid var(--border);
+  }
+
+  /* 手机推送横幅 */
+  .phone-tip {
+    display: none; margin-bottom: 18px; padding: 9px 14px; border-radius: var(--radius);
+    background: var(--surface-2); border: 1px solid var(--border); font-size: 12.5px;
+    color: var(--text-2); line-height: 1.7; cursor: pointer;
+  }
+  .phone-tip.show { display: block; }
+  .phone-tip .urls { display: none; margin-top: 4px; }
+  .phone-tip.expanded .urls { display: block; }
+  .phone-tip code { color: var(--accent); font-size: 12px; word-break: break-all; }
+
+  /* ── 抽屉 ── */
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 92vw); z-index: 20;
+    background: var(--surface); border-left: 1px solid var(--border);
+    transform: translateX(100%); transition: transform .22s ease; display: flex; flex-direction: column;
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-head {
+    display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border);
+  }
+  .drawer-head button {
+    font: inherit; font-size: 12.5px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid transparent; background: transparent; color: var(--text-2);
+  }
+  .drawer-head button.on { color: var(--text); background: var(--surface-3); border-color: var(--border-strong); }
+  .drawer-head .spacer { flex: 1; }
+  .drawer-head .close { font-size: 15px; padding: 6px 9px; }
+  .drawer-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px; }
+  .pane { display: none; }
+  .pane.on { display: block; }
+  .field-label { font-size: 11.5px; font-weight: 600; color: var(--text-2); margin-bottom: 5px; display: block; }
+  .field { margin-bottom: 12px; }
+  textarea, .input {
+    width: 100%; border: 1px solid var(--border-strong); border-radius: var(--radius);
+    padding: 9px 12px; font: inherit; font-size: 13.5px; color: var(--text); background: var(--bg);
+    outline: none; resize: none; transition: border-color .15s; font-variant-numeric: tabular-nums;
+  }
+  textarea:focus, .input:focus { border-color: var(--accent); }
+  textarea::placeholder, .input::placeholder { color: var(--text-3); }
+  #bg { height: 150px; font-size: 13px; line-height: 1.65; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  select.input { appearance: auto; cursor: pointer; }
+  select.input option { background: var(--surface-2); }
+  .tip { font-size: 11.5px; color: var(--text-3); line-height: 1.6; margin-top: 6px; }
+  .h-item { font-size: 12.5px; color: var(--text-2); line-height: 1.55; padding: 8px 11px; background: var(--surface-2); border-radius: var(--radius); margin-bottom: 6px; overflow-wrap: anywhere; }
+  .h-item b { color: var(--accent); }
+  .brief { font-size: 12.5px; color: var(--text-2); line-height: 1.9; list-style: none; }
+  .brief li { padding-left: 13px; position: relative; }
+  .brief li::before { content: ""; position: absolute; left: 0; top: .72em; width: 4px; height: 4px; border-radius: 50%; background: var(--text-3); }
+  .brief b { color: var(--text); }
+
+  /* 题库 */
+  .bank-item {
+    display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px;
+    background: var(--surface-2); border-radius: var(--radius); margin-bottom: 6px;
+    font-size: 12.5px; line-height: 1.55; color: var(--text-2);
+  }
+  .bank-item .bt { flex: 1; overflow-wrap: anywhere; }
+  .bank-item .bs { color: var(--text-3); font-size: 11px; }
+  .bank-item .del { border: none; background: none; color: var(--text-3); cursor: pointer; font: inherit; padding: 0 2px; }
+  .bank-item .del:hover { color: var(--red); }
+  .bank-preview-card { padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius); margin-bottom: 6px; font-size: 12px; }
+  .bank-preview-card b { color: var(--text); display: block; margin-bottom: 3px; overflow-wrap: anywhere; }
+  .bank-preview-card .a { color: var(--text-3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .bank-preview-card label { display: flex; gap: 7px; align-items: flex-start; cursor: pointer; }
+
+  /* 题库命中徽标 & 疑似命中 */
+  .bank-badge {
+    display: none; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; flex-shrink: 0;
+    color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 3px 10px;
+  }
+  .bank-badge.on { display: inline-flex; }
+  #suspect {
+    display: none; margin-bottom: 14px; padding: 9px 13px; border-radius: var(--radius);
+    background: var(--surface-2); border: 1px solid var(--border-strong); font-size: 12.5px; color: var(--text-2);
+    line-height: 1.6; overflow-wrap: anywhere;
+  }
+  #suspect.show { display: block; }
+  #suspect button {
+    font: inherit; font-size: 12.5px; cursor: pointer; color: var(--accent);
+    background: var(--accent-soft); border: none; border-radius: 7px; padding: 4px 10px; margin-left: 8px;
+  }
+  .mini-btn {
+    font: inherit; font-size: 12px; color: var(--text-2); background: var(--surface-2);
+    border: 1px solid var(--border-strong); border-radius: 8px; padding: 5px 10px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .mini-btn:hover { color: var(--text); }
+
+  /* 遮罩 */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 15; display: none; }
+  .scrim.show { display: block; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+  @media (max-width: 720px) {
+    .stage-inner { padding: 18px 14px 14px; }
+    #answer { font-size: 19px; }
+    .drawer { width: 100vw; }
+    textarea, .input { font-size: 16px; }
+    .btn-mic { width: 48px; height: 48px; }
+    .btn-send { padding: 0 14px; }
+    .brand b { font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="mark"></span>Interview Copilot</div>
+  <span class="spacer"></span>
+  <select id="session-sel" onchange="switchSession(this.value)" title="切换面试会话"></select>
+  <button class="ghost" onclick="newSession()" title="开始新面试">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M12 5l0 14"/><path d="M5 12l14 0"/></svg>
+    新面试
+  </button>
+  <label class="switch" title="自动聆听并生成">
+    <input type="checkbox" id="auto-mode"><span class="track"></span>自动
+  </label>
+  <button class="ghost" id="drawer-open" onclick="openDrawer('bg')">
+    <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-1a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v1"/></svg>
+  </button>
+</header>
+
+<div class="stage">
+  <div class="stage-inner">
+    <div class="phone-tip" id="phone-tip" onclick="this.classList.toggle('expanded')">
+      手机推送：手机打开 <span id="phone-url-first"></span>（同一Wi-Fi），输入问题点「发送到电脑」 · 展开全部地址
+      <div class="urls" id="phone-url"></div>
+    </div>
+    <div class="q-block">
+      <span class="q-tag">Q</span>
+      <span class="q-text" id="q-display"></span>
+      <span class="bank-badge" id="bank-badge">题库命中</span>
+    </div>
+    <div id="suspect"></div>
+    <div class="presets" id="presets">
+      <button onclick="fillPreset('self-intro')">自我介绍</button>
+      <button onclick="fillPreset('project')">项目经历</button>
+      <button onclick="fillPreset('why-us')">为什么选我们</button>
+      <button onclick="fillPreset('weakness')">优缺点</button>
+      <button onclick="fillPreset('ask-us')">反问环节</button>
+    </div>
+    <div class="a-block">
+      <div id="answer" class="empty" data-placeholder="回答将显示在这里&#10;自动模式下：念完答案说「下一题」或按空格继续"></div>
+      <div class="refine-row" id="refine-row">
+        <button onclick="copyAnswer(this)">复制</button>
+        <button onclick="refine('更简短，控制在100字以内')">更简短</button>
+        <button onclick="refine('更口语化，像平时说话，避免书面词')">更口语</button>
+        <button onclick="refine('分3-5个要点，每个要点一句话')">列要点</button>
+        <button onclick="refine('展开细节，400字左右，补充一个具体例子')">再展开</button>
+        <button onclick="saveToBank(this)">收进题库</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dock-status">
+  <span class="dot" id="mic-dot"></span>
+  <span class="wave" id="mic-wave"><i></i><i></i><i></i><i></i><i></i></span>
+  <span id="mic-text">语音未开启</span>
+  <span class="live" id="live-badge"><i style="width:6px;height:6px;border-radius:50%;background:var(--accent);animation:blink .9s infinite"></i>生成中</span>
+  <span style="flex:1"></span>
+  <span id="net-status"></span>
+</div>
+
+<div class="dock">
+  <div class="dock-inner">
+    <button class="btn btn-mic" id="mic-btn" onclick="toggleMic()" title="开始/停止听音">
+      <svg class="ic" viewBox="0 0 24 24" style="width:19px;height:19px"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17l0 4"/><path d="M9 21l6 0"/></svg>
+    </button>
+    <textarea id="question" rows="1" placeholder="输入问题，Enter 生成…"></textarea>
+    <button class="btn btn-go" id="go-btn" onclick="generate()">生成</button>
+    <button class="btn btn-send" id="send-btn" style="display:none" onclick="sendToPC()">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M10 14l11 -11"/><path d="M21 3l-6.5 18a.55 .55 0 0 1 -1 0l-3.5 -7l-7 -3.5a.55 .55 0 0 1 0 -1l18 -6.5"/></svg>
+      发送
+    </button>
+  </div>
+</div>
+
+<button id="resume-btn" onclick="resumeListen()">说「下一题」或按空格继续（念答案的声音不会被记录）</button>
+
+<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-head">
+    <button class="on" data-pane="bg" onclick="switchPane('bg', this)">我的背景</button>
+    <button data-pane="bank" onclick="switchPane('bank', this)">题库</button>
+    <button data-pane="cfg" onclick="switchPane('cfg', this)">AI 设置</button>
+    <button data-pane="hist" onclick="switchPane('hist', this)">会话记录</button>
+    <button data-pane="brief" onclick="switchPane('brief', this)">速览</button>
+    <span class="spacer"></span>
+    <button class="close" onclick="closeDrawer()">×</button>
+  </div>
+  <div class="drawer-body">
+    <div class="pane on" id="pane-bg">
+      <button class="mini-btn" style="margin-bottom:10px" onclick="document.getElementById('resume-file').click()">
+        <svg class="ic" viewBox="0 0 24 24" style="width:13px;height:13px"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1-2-2v-14a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M12 11v6"/><path d="M9 14l3-3l3 3"/></svg>
+        上传简历解析（PDF / Word / TXT）
+      </button>
+      <input type="file" id="resume-file" accept=".pdf,.docx,.txt,.md" style="display:none">
+      <textarea id="bg" placeholder="技能栈、项目经历（做了什么/难点/结果数据）、工作年限、教育、期望薪资…&#10;写什么AI就用第一人称答什么，越具体越像你"></textarea>
+      <div class="tip" id="resume-status">存在本地浏览器。面试前把简历解析进来，回答会基于你的真实经历。</div>
+    </div>
+    <div class="pane" id="pane-cfg">
+      <div class="field"><label class="field-label">Base URL</label><input class="input" id="cfg-base" placeholder="https://ark.cn-beijing.volces.com/api/coding/v3…"></div>
+      <div class="field"><label class="field-label">API Key</label><input class="input" id="cfg-key" type="password" placeholder="sk-012345679… / ark-012345679…" autocomplete="off" spellcheck="false"></div>
+      <div class="field"><label class="field-label">模型</label><input class="input" id="cfg-model" placeholder="ep-xxx / deepseek-v4-flash / gpt-4o…" autocomplete="off" spellcheck="false"></div>
+      <div class="field"><label class="field-label">思考挡位</label>
+        <select class="input" id="cfg-thinking">
+          <option value="none">none · 关闭思考（最快，秒回）</option>
+          <option value="minimal">minimal · 关闭思考，直接回答</option>
+          <option value="low">low · 轻量思考，快速响应（推荐）</option>
+          <option value="medium">medium · 均衡：速度与深度</option>
+          <option value="high">high · 深度分析</option>
+          <option value="xhigh">xhigh · 更高强度思考</option>
+          <option value="max">max · 最高强度（最慢）</option>
+        </select>
+      </div>
+      <div class="grid-2">
+        <div class="field"><label class="field-label">温度</label><input class="input" id="cfg-temp" type="number" min="0" max="2" step="0.1" placeholder="0.7"></div>
+        <div class="field"><label class="field-label">最大输出 Token</label><input class="input" id="cfg-maxtok" type="number" min="100" step="100" placeholder="1500"></div>
+      </div>
+      <div class="tip">实时面试建议 low 或以下。配置存本浏览器；手机端页面需单独设置一次。</div>
+    </div>
+    <div class="pane" id="pane-bank">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <button class="mini-btn" onclick="document.getElementById('bank-file').click()">导入 md / txt</button>
+        <input type="file" id="bank-file" accept=".md,.txt,.markdown" multiple style="display:none">
+        <label style="display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-2);cursor:pointer">
+          <input type="checkbox" id="bank-ai" style="accent-color:var(--accent)">本地识别差时用 AI 兜底
+        </label>
+      </div>
+      <div id="bank-preview"></div>
+      <div class="field" style="margin-top:12px">
+        <label class="field-label">手动添加卡片</label>
+        <input class="input" id="bank-q" placeholder="问题…">
+        <textarea class="input" id="bank-a" style="height:56px;margin-top:6px" placeholder="答案…"></textarea>
+        <button class="mini-btn" style="margin-top:6px" onclick="bankAddManual()">添加</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin:12px 0 8px">
+        <span class="field-label" style="margin:0" id="bank-count">题库 0 张</span>
+        <span style="flex:1"></span>
+        <button class="mini-btn" onclick="bankClear()">清空</button>
+      </div>
+      <div id="bank-list"></div>
+      <div class="tip">命中路径有两条：本地词面匹配（毫秒级秒出）；未命中时题库整体进 AI 上下文，由模型语义检索，命中同样原样输出（标注「题库命中」）。没进题库的问题才走纯 AI 生成。回答后可点「收进题库」积累。</div>
+    </div>
+    <div class="pane" id="pane-hist">
+      <div id="history"><div class="tip">本场暂无问答</div></div>
+    </div>
+    <div class="pane" id="pane-brief">
+      <div class="tip" style="margin:0 0 8px">目标公司情报、岗位要求、人才画像、考察重点——写什么，AI 回答就往什么方向靠。</div>
+      <textarea id="brief" style="height:200px;font-size:13px;line-height:1.65" placeholder="示例：&#10;公司：某跨境电商公司，专注亚马逊平台，年销 1 亿+&#10;岗位：全栈开发工程师，考察底层潜力与项目经历&#10;人才画像：好奇、聪明、乐观、勇敢、自省&#10;文化：极聚焦、极有效、极高效"></textarea>
+      <div class="tip">存本地浏览器，不会进仓库。留空则按通用面试规则回答。</div>
+    </div>
+  </div>
+</aside>
+
+<script>
+const PRESETS = {
+  'self-intro': '请做一个自我介绍',
+  'project': '介绍一下你最有挑战的一个项目，你负责什么、遇到什么困难、怎么解决的、结果如何',
+  'why-us': '你为什么想加入我们公司？',
+  'weakness': '说说你的优点和缺点',
+  'ask-us': '你有什么想问我们的吗？'
+};
+const SYSTEM_BASE = `你正在辅助候选人参加一场AI面试（候选人已明确获准使用AI辅助）。回答时严格扮演候选人本人。
+
+【面试定制】
+{BRIEF}
+
+【候选人真实背景】
+{BG}
+
+【回答规则】
+1. 第一人称口语化中文，像真人面对面说话，绝不出现"作为一个AI""根据资料"等字眼
+2. 默认120~250字，直接给可说出口的话，不要markdown标题和emoji
+3. 项目经历自然融入STAR（背景-任务-行动-结果），结果尽量量化
+4. 回答体现真实的思考深度与自省，避免空话套话
+5. 背景资料里没有的细节不要编造具体数字，用模糊但真实感的表达
+6. 只输出回答正文本身`;
+
+const $ = id => document.getElementById(id);
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const API = '';
+const isPhone = matchMedia('(max-width: 720px)').matches;
+const hasSR = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+let cfg = load('iv_cfg', { base: 'https://ark.cn-beijing.volces.com/api/coding/v3', key: '', model: '', thinking: 'low', temperature: 0.7, maxTokens: 1500 });
+let background = load('iv_bg', '');
+let brief = load('iv_brief', '');
+let sessions = load('iv_sessions', {});
+let curId = load('iv_cur', '');
+let chatLog = [];
+let lastAnswer = '', lastQuestion = '';
+let generating = false;
+
+/* ---- 会话 ---- */
+function _newSessionId() { return 'M-' + new Date().toISOString().slice(5, 10).replace('-', '') + '-' + Math.random().toString(36).slice(2, 6); }
+function _sessionTitle() { return new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+(function initSessions() {
+  const legacy = load('iv_hist', []);
+  if (!Object.keys(sessions).length && legacy.length) {
+    const id = 'M-legacy-' + Math.random().toString(36).slice(2, 6);
+    sessions[id] = {
+      title: '早期测试记录', createdAt: Date.now(),
+      messages: legacy.flatMap(h => [{ role: 'user', content: h.q }, { role: 'assistant', content: h.a }])
+    };
+    localStorage.removeItem('iv_hist');
+  }
+  if (!curId || !sessions[curId]) {
+    curId = _newSessionId();
+    sessions[curId] = { title: _sessionTitle(), createdAt: Date.now(), messages: [] };
+  }
+  chatLog = sessions[curId].messages;
+  save('iv_sessions', sessions); save('iv_cur', curId);
+})();
+function newSession() {
+  curId = _newSessionId();
+  sessions[curId] = { title: _sessionTitle(), createdAt: Date.now(), messages: [] };
+  chatLog = sessions[curId].messages;
+  save('iv_sessions', sessions); save('iv_cur', curId);
+  renderSessionList(); renderHistory(); renderQ();
+}
+function switchSession(id) {
+  if (!sessions[id]) return;
+  curId = id; chatLog = sessions[curId].messages;
+  save('iv_cur', curId);
+  renderSessionList(); renderHistory(); renderQ();
+}
+function renderSessionList() {
+  $('session-sel').innerHTML = Object.entries(sessions)
+    .sort((a, b) => b[1].createdAt - a[1].createdAt)
+    .map(([id, s]) => `<option value="${id}" ${id === curId ? 'selected' : ''}>${s.title} · ${id}</option>`).join('');
+}
+function renderHistory() {
+  const qs = chatLog.filter(m => m.role === 'user');
+  $('history').innerHTML = qs.length
+    ? qs.map(m => `<div class="h-item"><b>Q</b> ${m.content.slice(0, 100)}</div>`).join('')
+    : '<div class="tip">本场暂无问答</div>';
+}
+/* 顶部问题行：显示当前正在回答/最近的问题 */
+function renderQ(text) {
+  const last = text !== undefined ? text : (chatLog.filter(m => m.role === 'user').slice(-1)[0]?.content || '');
+  $('q-display').textContent = last;
+}
+
+/* ---- 初始化 ---- */
+$('cfg-base').value = cfg.base; $('cfg-key').value = cfg.key; $('cfg-model').value = cfg.model; $('cfg-thinking').value = cfg.thinking || 'low';
+$('cfg-temp').value = cfg.temperature ?? 0.7; $('cfg-maxtok').value = cfg.maxTokens ?? 1500;
+$('bg').value = background;
+$('brief').value = brief;
+if (!hasSR) { $('mic-btn').style.display = 'none'; $('mic-text').textContent = '浏览器不支持语音'; }
+if (isPhone) {
+  $('send-btn').style.display = 'inline-flex';
+  $('go-btn').textContent = '本机生成';
+} else {
+  $('phone-tip').classList.add('show');
+}
+renderSessionList();
+renderHistory();
+renderQ();
+autoGrow();
+/* 录音或生成时隐藏预设与问题行，保持提词区干净 */
+function updateStageChrome() {
+  const busy = $('mic-btn').classList.contains('rec') || generating;
+  $('presets').classList.toggle('hide', busy || !!$('question').value.trim());
+}
+
+['cfg-base', 'cfg-key', 'cfg-model'].forEach(id => $(id).addEventListener('change', () => {
+  cfg = { ...cfg, base: $('cfg-base').value.trim(), key: $('cfg-key').value.trim(), model: $('cfg-model').value.trim() };
+  save('iv_cfg', cfg);
+}));
+$('cfg-thinking').addEventListener('change', () => { cfg = { ...cfg, thinking: $('cfg-thinking').value }; save('iv_cfg', cfg); });
+['cfg-temp', 'cfg-maxtok'].forEach(id => $(id).addEventListener('change', () => {
+  cfg = { ...cfg, temperature: parseFloat($('cfg-temp').value) || 0.7, maxTokens: parseInt($('cfg-maxtok').value) || 1500 };
+  $('cfg-temp').value = cfg.temperature; $('cfg-maxtok').value = cfg.maxTokens;
+  save('iv_cfg', cfg);
+}));
+$('bg').addEventListener('input', () => { background = $('bg').value; save('iv_bg', background); });
+$('brief').addEventListener('input', () => { brief = $('brief').value; save('iv_brief', brief); });
+
+/* 问题输入：自动增高 + Enter 生成 */
+function autoGrow() {
+  const t = $('question');
+  t.style.height = 'auto';
+  t.style.height = Math.min(t.scrollHeight, 120) + 'px';
+  updateStageChrome();
+}
+$('question').addEventListener('input', autoGrow);
+$('question').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generate(); }
+});
+/* 预设：点击填入问题并聚焦（从抽屉/快捷入口调用） */
+function fillPreset(k) { $('question').value = PRESETS[k]; autoGrow(); generate(); }
+// 按钮点击后移除焦点，避免 Enter/空格误触发
+document.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (b) b.blur();
+});
+
+/* ---- 抽屉 ---- */
+function openDrawer(pane) {
+  $('drawer').classList.add('open');
+  $('scrim').classList.add('show');
+  if (pane) switchPane(pane, document.querySelector(`.drawer-head button[data-pane="${pane}"]`));
+}
+function closeDrawer() {
+  $('drawer').classList.remove('open');
+  $('scrim').classList.remove('show');
+}
+function switchPane(pane, btn) {
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + pane));
+  document.querySelectorAll('.drawer-head button[data-pane]').forEach(b => b.classList.toggle('on', b.dataset.pane === pane));
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+/* ---- 手机推送 ---- */
+async function sendToPC() {
+  const q = $('question').value.trim();
+  if (!q) { $('question').focus(); return; }
+  try {
+    await fetch(`${API}/api/relay`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: q }) });
+    $('send-btn').textContent = '已发送'; setTimeout(() => $('send-btn').textContent = '发送', 1200);
+  } catch (e) { alert('发送失败：手机和电脑需在同一Wi-Fi，且电脑后端可达'); }
+}
+let lastRelayTs = 0;
+async function pollRelay() {
+  try {
+    const r = await fetch(`${API}/api/relay?after=${lastRelayTs}`);
+    const j = await r.json();
+    if (!isPhone && j.lan_ips && j.lan_ips.length && !$('phone-url').dataset.done) {
+      $('phone-url-first').textContent = `http://${j.lan_ips[0]}:8787`;
+      $('phone-url').innerHTML = j.lan_ips.map(ip => `<code>http://${ip}:8787</code>`).join('<br>');
+      $('phone-url').dataset.done = '1';
+    }
+    if (j.ts && j.ts !== lastRelayTs && !isPhone) {
+      lastRelayTs = j.ts;
+      $('question').value = j.text;
+      autoGrow();
+      generate();
+    }
+  } catch {}
+}
+setInterval(pollRelay, 1500);
+pollRelay();
+
+/* ---- 语音识别 ---- */
+let recog = null, recogOn = false, finalText = '', silenceTimer = null, paused = false;
+const RESUME_KEYWORDS = ['下一题', '继续'];
+function setMicUI(on) {
+  $('mic-btn').classList.toggle('rec', on);
+  $('mic-dot').classList.toggle('rec', on);
+  $('mic-wave').classList.toggle('on', on);
+  $('mic-btn').innerHTML = on
+    ? '<svg class="ic" viewBox="0 0 24 24" style="width:19px;height:19px"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
+    : '<svg class="ic" viewBox="0 0 24 24" style="width:19px;height:19px"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17l0 4"/><path d="M9 21l6 0"/></svg>';
+}
+function toggleMic() {
+  if (recogOn) { recog.stop(); stopMicUI(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recog = new SR();
+  recog.lang = 'zh-CN'; recog.continuous = true; recog.interimResults = true;
+  recog.onresult = (e) => {
+    let all = '', interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      all += t;
+      if (e.results[i].isFinal) finalText += t;
+      else interim += t;
+    }
+    if (paused || generating) {
+      if (paused && !generating && RESUME_KEYWORDS.some(k => all.includes(k))) resumeListen();
+      return;
+    }
+    const live = (finalText + interim).slice(-600);
+    $('question').value = live;
+    autoGrow();
+    renderQ(live);
+    if ($('auto-mode').checked) {
+      clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(autoTrigger, 2200);
+    }
+  };
+  recog.onend = () => { if (recogOn) { try { recog.start(); } catch {} } };
+  recog.onerror = (e) => { if (e.error === 'not-allowed') { stopMicUI(); alert('麦克风权限被拒绝，请在浏览器地址栏允许麦克风'); } };
+  finalText = '';
+  paused = false;
+  recog.start();
+  recogOn = true;
+  setMicUI(true);
+  $('mic-text').textContent = $('auto-mode').checked ? '自动聆听中' : '聆听中';
+}
+function stopMicUI() {
+  recogOn = false; paused = false; clearTimeout(silenceTimer);
+  setMicUI(false);
+  $('mic-text').textContent = '语音未开启';
+  $('resume-btn').style.display = 'none';
+}
+function resumeListen() {
+  paused = false;
+  $('resume-btn').style.display = 'none';
+  finalText = '';
+  $('question').value = ''; autoGrow();
+  renderQ('');
+  $('mic-text').textContent = $('auto-mode').checked ? '自动聆听中' : '聆听中';
+  if (!recogOn) toggleMic();
+}
+document.addEventListener('keydown', e => {
+  if (paused && e.code === 'Space' && !['TEXTAREA', 'INPUT'].includes(e.target.tagName)) {
+    e.preventDefault();
+    resumeListen();
+  }
+});
+function autoTrigger() {
+  if (!recogOn || generating) { if (generating) silenceTimer = setTimeout(autoTrigger, 1500); return; }
+  const text = finalText.trim();
+  if (text.length < 2) return;
+  finalText = '';
+  generate(null, text);
+}
+
+/* ---- AI 调用 ---- */
+async function callAI(messages, onDelta) {
+  if (!cfg.key || !cfg.model) throw new Error('请先在抽屉「AI 设置」里填 API Key 和模型名');
+  const resp = await fetch(`${API}/api/ai/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      base: cfg.base, key: cfg.key, model: cfg.model, messages,
+      temperature: cfg.temperature ?? 0.7, max_tokens: cfg.maxTokens ?? 1500,
+      thinking_level: cfg.thinking || 'low'
+    })
+  });
+  if (!resp.ok) throw new Error(`代理请求失败 HTTP ${resp.status}`);
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split('\n'); buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const d = line.slice(6).trim();
+      if (d === '[DONE]') continue;
+      try {
+        const j = JSON.parse(d);
+        if (j.proxy_error) throw new Error(j.proxy_error);
+        const t = j.choices?.[0]?.delta?.content || '';
+        if (t) onDelta(t);
+      } catch (e) {
+        if (e.message && (e.message.startsWith('HTTP') || e.message.includes('无法连接') || e.message.includes('代理'))) throw e;
+      }
+    }
+  }
+}
+const BANK_RETRIEVAL_PROMPT = `【候选人题库】以下是候选人提前准备好的问答。判断当前面试官的问题是否与题库中某条语义匹配（换种问法也算，不要求逐字一致）：
+- 匹配：直接原样输出那条答案的完整内容，并在最前面加「[题库] 」标记，不要改写、不要补充。
+- 不匹配：忽略题库，按你原本的规则正常回答，不要加标记。
+
+`;
+function buildMessages(question, extra) {
+  const sys = SYSTEM_BASE
+    .replace('{BRIEF}', brief || '（未填写，按通用面试规则回答，不要编造公司信息）')
+    .replace('{BG}', background || '（暂无，基于通用全栈工程师经验回答，避免编造具体公司/项目名）');
+  const msgs = [{ role: 'system', content: sys }];
+  // 题库整体进上下文，由模型做语义检索；超长时只带本地匹配的前 20 名候选
+  if (bank.length) {
+    let cards = bank;
+    const total = bank.reduce((n, c) => n + c.q.length + c.a.length, 0);
+    if (total > 45000) {
+      cards = rankBank(question).slice(0, 20).map(r => r.card);
+    }
+    if (cards.length) {
+      const ctx = cards.map((c, i) => `[${i}] 问：${c.q}\n答：${c.a}`).join('\n\n');
+      msgs.push({ role: 'system', content: BANK_RETRIEVAL_PROMPT + ctx });
+    }
+  }
+  msgs.push(...chatLog);
+  msgs.push({ role: 'user', content: extra ? `${question}\n\n（补充要求：${extra}）` : question });
+  return msgs;
+}
+async function generate(extra, forcedQuestion) {
+  const q = (forcedQuestion ?? $('question').value).trim();
+  if (!q || generating) return;
+  generating = true;
+  if (recogOn) { paused = true; clearTimeout(silenceTimer); }
+  const btn = $('go-btn'); btn.disabled = true;
+  const origText = btn.textContent; btn.textContent = '思考中';
+  const box = $('answer'); box.classList.remove('empty'); box.classList.add('streaming'); box.textContent = '';
+  $('live-badge').classList.add('on');
+  lastQuestion = q; lastAnswer = '';
+  renderQ(q);
+  /* 题库优先：命中即秒出，不走 AI */
+  const m = matchBank(q);
+  $('bank-badge').classList.remove('on');
+  hideSuspect();
+  if (m.hit) {
+    lastAnswer = m.hit.card.a;
+    box.classList.remove('empty'); box.classList.remove('streaming');
+    box.textContent = lastAnswer;
+    $('bank-badge').textContent = `题库命中 ${m.hit.pct}%`;
+    $('bank-badge').classList.add('on');
+    chatLog.push({ role: 'user', content: q }, { role: 'assistant', content: lastAnswer });
+    save('iv_sessions', sessions);
+    renderHistory();
+    $('refine-row').classList.add('show');
+    generating = false;
+    btn.disabled = false; btn.textContent = origText;
+    if (recogOn && hasSR && !isPhone) {
+      paused = true;
+      $('resume-btn').style.display = 'block';
+      $('mic-text').textContent = '暂停中：说「下一题」/按空格继续';
+    }
+    return;
+  }
+  if (m.suspect) showSuspect(m.suspect);
+  try {
+    await callAI(buildMessages(q, extra), t => {
+      lastAnswer += t;
+      box.textContent = lastAnswer.replace(/^\s*\[题库\]\s*/, '');
+      box.scrollTop = box.scrollHeight;
+    });
+    // AI 检索命中了题库（模型会打上标记）
+    if (/^\s*\[题库\]/.test(lastAnswer)) {
+      lastAnswer = lastAnswer.replace(/^\s*\[题库\]\s*/, '');
+      box.textContent = lastAnswer;
+      $('bank-badge').textContent = '题库命中 · AI 检索';
+      $('bank-badge').classList.add('on');
+    }
+    chatLog.push({ role: 'user', content: q }, { role: 'assistant', content: lastAnswer });
+    save('iv_sessions', sessions);
+    renderHistory();
+    $('refine-row').classList.add('show');
+  } catch (e) {
+    box.textContent = '错误：' + (e.message || e) + '\n\n检查「AI 设置」：Base URL / API Key / 模型名';
+  }
+  generating = false;
+  box.classList.remove('streaming');
+  $('live-badge').classList.remove('on');
+  btn.disabled = false; btn.textContent = origText;
+  $('refine-row').classList.add('show');
+  updateStageChrome();
+  if (recogOn && hasSR && !isPhone) {
+    paused = true;
+    $('resume-btn').style.display = 'block';
+    $('mic-text').textContent = '暂停中：说「下一题」/按空格继续';
+  }
+}
+function refine(extra) {
+  if (!lastQuestion || generating) return;
+  chatLog.push({ role: 'assistant', content: lastAnswer || '（上一次无回答）' });
+  save('iv_sessions', sessions);
+  generate(extra, lastQuestion);
+  chatLog.push({ role: 'user', content: `（补充要求：${extra}）` });
+  save('iv_sessions', sessions);
+}
+function copyAnswer(btn) {
+  navigator.clipboard.writeText(lastAnswer).then(() => {
+    btn.textContent = '已复制'; setTimeout(() => btn.textContent = '复制', 1200);
+  });
+}
+/* 疑似命中条 */
+function showSuspect(s) {
+  const el = $('suspect');
+  el.innerHTML = `疑似题库命中（${s.pct}%）：${s.card.q}<button onclick="useBankCard('${s.card.id}')">改用该答案</button>`;
+  el.classList.add('show');
+}
+function hideSuspect() {
+  const el = $('suspect');
+  el.classList.remove('show');
+  el.innerHTML = '';
+}
+function useBankCard(id) {
+  const c = bank.find(x => x.id === id);
+  if (!c) return;
+  const box = $('answer');
+  box.classList.remove('empty', 'streaming');
+  box.textContent = c.a;
+  $('bank-badge').textContent = '题库命中';
+  $('bank-badge').classList.add('on');
+  hideSuspect();
+}
+
+/* ---- 简历解析 ---- */
+$('resume-file').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const st = $('resume-status');
+  st.textContent = '解析中…';
+  const fd = new FormData();
+  fd.append('file', f);
+  try {
+    const resp = await fetch(`${API}/api/ai/resume`, { method: 'POST', body: fd });
+    const j = await resp.json();
+    if (j.error) { st.textContent = '解析失败：' + j.error; return; }
+    const text = (j.text || '').trim();
+    if (!text) { st.textContent = '未解析出文本（扫描版PDF需手动粘贴）'; return; }
+    if (background.trim() && !confirm('已有背景内容，用简历解析结果替换？\n（取消则追加到末尾）')) {
+      background = background.trim() + '\n\n=== 以下来自简历 ===\n' + text;
+    } else {
+      background = text;
+    }
+    $('bg').value = background;
+    save('iv_bg', background);
+    st.textContent = `已解析 ${f.name}（${text.length}字），可手动微调`;
+  } catch (err) {
+    st.textContent = '上传失败：' + (err.message || err);
+  }
+  e.target.value = '';
+});
+/* ---- 题库：解析 + 存储 + 模糊匹配 ---- */
+let bank = [];
+
+/* 归一化：小写、全角转半角、去标点空白、去口语填充词、同义词归一 */
+const FILLERS = ['嗯', '呃', '那个', '就是说', '说一下', '讲一下', '麻烦您', '麻烦你', '请问一下', '请问', '我想问问', '那么', '然后'];
+const ALIAS = [
+  ['做过的项目', '项目'], ['项目经历', '项目'], ['项目背景', '项目'], ['参与的项目', '项目'],
+  ['优点和缺点', '优缺点'], ['优点缺点', '优缺点'], ['优势和劣势', '优缺点'], ['优势劣势', '优缺点'],
+  ['求职动机', '加入我们'], ['为什么想来', '为什么选择我们'], ['为什么加入我们', '为什么选择我们'],
+  ['最大的挑战', '挑战'], ['最有挑战', '挑战'], ['遇到过什么困难', '挑战'], ['遇到什么困难', '挑战'],
+  ['你怎么理解的', '的理解'], ['工作原理', '原理'],
+];
+function normText(s) {
+  s = (s || '').toLowerCase().normalize('NFKC');
+  s = s.replace(/[\s，。！？；：、''""（）【】\[\]{}<>《》·—…~!@#$%^&*()_+=|\\/?,.;:'"<>]+/g, '');
+  for (const [k, v] of ALIAS) s = s.split(k).join(v);
+  for (const f of FILLERS) s = s.split(f).join('');
+  return s;
+}
+/* 分词：中文按二字片段滑动、英文按词 */
+function tokensOf(s) {
+  const out = [];
+  const cjkRuns = s.replace(/[a-z0-9]+/g, ' ');
+  for (const run of cjkRuns.split(/\s+/)) {
+    if (!run) continue;
+    if (run.length === 1) { out.push(run); continue; }
+    for (let i = 0; i < run.length - 1; i++) out.push(run.slice(i, i + 2));
+  }
+  for (const w of s.match(/[a-z0-9]+/g) || []) if (w.length > 1) out.push(w);
+  return out;
+}
+function buildBankIndex() {
+  for (const c of bank) c._tok = new Set(tokensOf(normText(c.q)));
+}
+/* 模糊匹配：全量打分排序；覆盖率0.55 + 二元相似0.30 + 多token加成0.15 */
+function rankBank(q) {
+  if (!bank.length) return [];
+  const nq = normText(q);
+  const inTok = tokensOf(nq);
+  const inSet = new Set(inTok);
+  const scored = [];
+  for (const c of bank) {
+    let covHit = 0;
+    c._tok.forEach(t => { if (inSet.has(t)) covHit++; });
+    const cov = c._tok.size ? covHit / c._tok.size : 0;
+    let inter = 0;
+    inTok.forEach(t => { if (c._tok.has(t)) inter++; });
+    const sim = inTok.length ? inter / inTok.length : 0;
+    const kw = Math.min(1, covHit / 3);
+    scored.push({ card: c, score: 0.55 * cov + 0.30 * sim + 0.15 * kw });
+  }
+  return scored.sort((a, b) => b.score - a.score);
+}
+function matchBank(q) {
+  const ranked = rankBank(q);
+  if (!ranked.length) return { hit: null, suspect: null, ranked };
+  const best = ranked[0], second = ranked[1]?.score ?? 0;
+  const distinct = best.score - second >= 0.06;
+  if (best.score >= 0.55 && distinct) return { hit: { ...best, pct: Math.round(best.score * 100) }, suspect: null, ranked };
+  if (best.score >= 0.38) return { hit: null, suspect: { ...best, pct: Math.round(best.score * 100) }, ranked };
+  return { hit: null, suspect: null, ranked };
+}
+
+/* ---- md 解析：多策略自动识别，系统适配各种格式 ---- */
+function parseMd(text) {
+  const lines = text.split(/\r?\n/);
+  const strategies = [
+    { name: '混合自动识别', fn: parseUnified },
+    { name: '问答前缀', fn: parseQAPairs },
+    { name: '标题分块', fn: parseHeadings },
+    { name: '分隔线卡片', fn: parseDividers },
+    { name: '加粗问题', fn: parseBoldLines },
+    { name: '编号列表', fn: parseNumbered },
+  ];
+  let best = [], bestScore = 0;
+  for (const s of strategies) {
+    let cards;
+    try { cards = s.fn(lines); } catch { cards = []; }
+    cards = cards.filter(c => c.q && c.a && c.a.trim().length >= 15);
+    const score = cards.length + cards.reduce((n, c) => n + Math.min(c.a.length, 300), 0) / 5000;
+    if (cards.length && score > bestScore) { best = cards.map(c => ({ ...c, source: s.name })); bestScore = score; }
+  }
+  return best;
+}
+/* 统一顺序解析器：同一文件里混用多种结构也能各归各位。
+   问题起始锚点：标题 / Q:前缀 / 整行加粗 / 编号行（仅当当前无问题）/ 分隔线后的首行 */
+function parseUnified(lines) {
+  const H = l => /^#{1,4}\s+(.+)/.exec(l);
+  const QA = l => /^(?:q|问|问题|题目)\s*[:：](.+)/i.exec(l);
+  const AB = l => /^(?:a|答|答案|answer)\s*[:：]/i.test(l);
+  const BOLD = l => /^\*\*(.+?)\*\*\s*:?\s*$/.exec(l);
+  const NUM = l => /^\d{1,2}[.、）)]\s*(.+)/.exec(l);
+  const DIV = l => /^(-{3,}|={3,}|\*{3,}|_{3,})\s*$/.test(l);
+  const cards = [];
+  let q = null, a = null, expectQ = false;
+  const push = () => {
+    if (q && a && a.trim().length >= 15) cards.push({ q: q.trim(), a: a.trim() });
+    else if (q && a && cards.length && a.trim()) cards[cards.length - 1].a += '\n' + q;
+    q = null; a = null;
+  };
+  for (const raw of lines) {
+    const t = raw.trim();
+    let m;
+    if (DIV(t)) { push(); expectQ = true; continue; }
+    if ((m = QA(t))) {
+      push();
+      q = m[1].replace(/[*`]/g, '').trim();
+      continue;
+    }
+    if (q !== null && AB(t)) { a = t.replace(/^(?:a|答|答案|answer)\s*[:：]/i, '').trim(); continue; }
+    if ((m = H(raw))) {
+      push();
+      q = m[1].replace(/[*`]/g, '').trim();
+      continue;
+    }
+    if ((m = BOLD(t))) {
+      push();
+      q = m[1].trim();
+      continue;
+    }
+    if (expectQ && t) {
+      push();
+      q = t.replace(/[*`]/g, '').trim();
+      expectQ = false;
+      continue;
+    }
+    if (!q && (m = NUM(t))) { q = m[1].replace(/[*`]/g, '').trim(); continue; }
+    if (q !== null) {
+      if (t || a !== null) { if (a === null) a = raw; else a += '\n' + raw; }
+      continue;
+    }
+    if (t) expectQ = false; /* 空行不打断分隔线后的「等待问题」状态 */
+  }
+  push();
+  return cards;
+}
+function parseQAPairs(lines) {
+  const cards = [];
+  let q = null, a = null;
+  const isQ = l => /^(?:q|问|问题|题目)\s*[:：]/i.test(l);
+  const isA = l => /^(?:a|答|答案|answer)\s*[:：]/i.test(l);
+  for (const raw of lines) {
+    const l = raw.trim();
+    if (isQ(l)) {
+      if (q && a && a.trim()) cards.push({ q, a: a.trim() });
+      q = l.replace(/^(?:q|问|问题|题目)\s*[:：]/i, '').replace(/^\*+|\*+$/g, '').trim();
+      a = null;
+    } else if (isA(l) && q) {
+      a = l.replace(/^(?:a|答|答案|answer)\s*[:：]/i, '').trim();
+    } else if (q && a !== null) {
+      a += '\n' + raw;
+    }
+  }
+  if (q && a && a.trim()) cards.push({ q, a: a.trim() });
+  return cards;
+}
+function parseHeadings(lines) {
+  const cards = [];
+  let q = null, buf = [];
+  for (const raw of lines) {
+    const m = raw.match(/^(#{1,4})\s+(.+)/);
+    if (m && !/^[=#|:\-]+$/.test(m[2])) {
+      if (q && buf.length) cards.push({ q, a: buf.join('\n').trim() });
+      q = m[2].replace(/[*`]/g, '').trim();
+      buf = [];
+    } else if (q !== null) {
+      if (raw.trim() && !/^---+$/.test(raw.trim())) buf.push(raw);
+    }
+  }
+  if (q && buf.length) cards.push({ q, a: buf.join('\n').trim() });
+  return cards;
+}
+function parseDividers(lines) {
+  const cards = [];
+  let block = [];
+  const flush = () => {
+    const content = block.filter(l => l.trim() && !/^[-=*_#]+$/.test(l.trim()));
+    if (content.length >= 2) cards.push({ q: content[0].replace(/[*`]/g, '').trim(), a: content.slice(1).join('\n').trim() });
+    block = [];
+  };
+  for (const raw of lines) {
+    if (/^(-{3,}|={3,}|\*{3,}|_{3,})\s*$/.test(raw.trim())) { flush(); continue; }
+    block.push(raw);
+  }
+  flush();
+  return cards;
+}
+function parseBoldLines(lines) {
+  const cards = [];
+  let q = null, buf = [];
+  for (const raw of lines) {
+    const m = raw.match(/^\*\*(.+?)\*\*\s*:?\s*$/);
+    if (m) {
+      if (q && buf.length) cards.push({ q, a: buf.join('\n').trim() });
+      q = m[1].trim(); buf = [];
+    } else if (q !== null && raw.trim()) {
+      buf.push(raw);
+    }
+  }
+  if (q && buf.length) cards.push({ q, a: buf.join('\n').trim() });
+  return cards;
+}
+function parseNumbered(lines) {
+  const cards = [];
+  let q = null, buf = [];
+  const isNum = l => /^\d{1,2}[.、）)]\s*\S/.test(l);
+  for (const raw of lines) {
+    if (isNum(raw.trim())) {
+      if (q && buf.length) cards.push({ q, a: buf.join('\n').trim() });
+      q = raw.trim().replace(/^\d{1,2}[.、）)]\s*/, '').replace(/[*`]/g, '').trim();
+      buf = [];
+    } else if (q !== null && raw.trim()) {
+      buf.push(raw);
+    }
+  }
+  if (q && buf.length) cards.push({ q, a: buf.join('\n').trim() });
+  return cards;
+}
+/* AI 兜底解析：任意格式交给模型抽取 */
+async function aiParseMd(text) {
+  const prompt = `下面是一份面试准备笔记（Markdown）。请从中抽取「面试官可能问的问题」和「对应的准备好的回答」，输出严格的 JSON 数组，格式：[{"q":"问题原文或概括","a":"对应的回答原文，保留完整内容"}]。只输出 JSON，不要任何解释。没有问答对的内容跳过。\n\n${text.slice(0, 12000)}`;
+  let out = '';
+  await callAI([{ role: 'user', content: prompt }], t => { out += t; });
+  const m = out.match(/\[[\s\S]*\]/);
+  if (!m) throw new Error('AI 未返回有效 JSON');
+  const arr = JSON.parse(m[0]);
+  return arr.filter(c => c.q && c.a).map(c => ({ q: String(c.q).trim(), a: String(c.a).trim(), source: 'ai' }));
+}
+
+/* ---- 题库 UI ---- */
+let _pendingCards = [];
+async function loadBank() {
+  try {
+    const j = await (await fetch(`${API}/api/bank`)).json();
+    bank = j.cards || [];
+    buildBankIndex();
+    renderBank();
+  } catch {}
+}
+function renderBank() {
+  $('bank-count').textContent = `题库 ${bank.length} 张`;
+  $('bank-list').innerHTML = bank.map(c =>
+    `<div class="bank-item"><div class="bt">${c.q}<div class="bs">${c.source}</div></div><button class="del" onclick="bankDelete('${c.id}')" title="删除">✕</button></div>`
+  ).join('') || '<div class="tip">题库为空：导入 md 文件，或回答后点「收进题库」积累。</div>';
+}
+function showBankPreview(cards, filename) {
+  _pendingCards = cards;
+  $('bank-preview').innerHTML = `
+    <div class="tip" style="margin:0 0 8px">识别出 ${cards.length} 张卡片（${filename}），取消勾选可排除：</div>
+    ${cards.map((c, i) => `
+      <div class="bank-preview-card">
+        <label><input type="checkbox" class="bank-ck" data-i="${i}" checked>
+        <span><b>${c.q.replace(/</g, '&lt;')}</b><span class="a">${(c.a || '').replace(/</g, '&lt;').slice(0, 120)}</span></span></label>
+      </div>`).join('')}
+    <button class="mini-btn" style="margin-top:6px" onclick="confirmImport()">确认导入</button>`;
+}
+async function confirmImport() {
+  const checked = [];
+  document.querySelectorAll('.bank-ck').forEach(ck => {
+    if (ck.checked) checked.push(_pendingCards[+ck.dataset.i]);
+  });
+  if (!checked.length) return;
+  const j = await (await fetch(`${API}/api/bank/import`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cards: checked.map(c => ({ q: c.q, a: c.a, source: c.source || '导入' })) })
+  })).json();
+  $('bank-preview').innerHTML = `<div class="tip">已导入：新增 ${j.added} 张，更新 ${j.replaced} 张，当前共 ${j.total} 张。</div>`;
+  await loadBank();
+}
+$('bank-file').addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  if (!files.length) return;
+  const useAI = $('bank-ai').checked;
+  const previewAll = [];
+  for (const f of files) {
+    const text = await f.text();
+    let cards = parseMd(text);
+    if ((cards.length === 0 || (cards.length <= 2 && text.length > 1500)) && useAI && cfg.key && cfg.model) {
+      try {
+        const aiCards = await aiParseMd(text);
+        if (aiCards.length > cards.length) cards = aiCards;
+      } catch (err) {
+        $('bank-preview').innerHTML = `<div class="tip">本地识别 ${cards.length} 张；AI 兜底失败：${err.message}</div>`;
+      }
+    }
+    previewAll.push({ name: f.name, cards });
+  }
+  showBankPreview(previewAll.flatMap(p => p.cards), files.map(f => f.name).join(', '));
+  e.target.value = '';
+});
+async function bankAddManual() {
+  const q = $('bank-q').value.trim(), a = $('bank-a').value.trim();
+  if (!q || !a) return;
+  await fetch(`${API}/api/bank/card`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q, a }) });
+  $('bank-q').value = ''; $('bank-a').value = '';
+  await loadBank();
+}
+async function bankDelete(id) {
+  await fetch(`${API}/api/bank/card/${id}`, { method: 'DELETE' });
+  await loadBank();
+}
+async function bankClear() {
+  if (!confirm('确定清空整个题库？')) return;
+  await fetch(`${API}/api/bank`, { method: 'DELETE' });
+  await loadBank();
+}
+async function saveToBank(btn) {
+  if (!lastQuestion || !lastAnswer) return;
+  const j = await (await fetch(`${API}/api/bank/card`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ q: lastQuestion, a: lastAnswer })
+  })).json();
+  await loadBank();
+  if (btn) { btn.textContent = '已收进题库'; setTimeout(() => btn.textContent = '收进题库', 1500); }
+}
+
+loadBank();
+</script>
