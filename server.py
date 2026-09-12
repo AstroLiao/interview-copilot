@@ -245,4 +245,26 @@ async def index():
 
 
 if __name__ == "__main__":
+    import sys
+    import threading
+    import urllib.request
+    import webbrowser
+
+    URL = "http://localhost:8787"
+
+    def already_up() -> bool:
+        try:
+            urllib.request.urlopen("http://127.0.0.1:8787/", timeout=1)
+            return True
+        except Exception:
+            return False
+
+    if already_up():
+        print("服务已在运行，直接打开页面")
+        webbrowser.open(URL)
+        raise SystemExit(0)
+
+    if "--no-open" not in sys.argv:
+        threading.Timer(1.5, lambda: webbrowser.open(URL)).start()
+
     uvicorn.run(app, host="0.0.0.0", port=8787, log_level="info")

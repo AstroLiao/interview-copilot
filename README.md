@@ -54,7 +54,7 @@ python -m venv .venv
 .venv/Scripts/python server.py
 ```
 
-Windows 下直接双击 `启动.bat`。
+Windows 下直接双击 `启动.bat`。首次配好后，桌面的 **Interview Copilot** 快捷方式一键启动（自动打开页面，已在运行则只开页面）；**Interview Copilot 停止** 快捷方式一键停止。快捷方式与图标可运行 `make-shortcuts.ps1` 重新生成。
 
 - 本机访问：http://localhost:8787
 - 手机访问：http://<局域网IP>:8787（与电脑同一 Wi-Fi，防火墙放行 8787 端口）
