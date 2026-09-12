@@ -5,6 +5,7 @@
 """
 import io
 import json
+import os
 import re
 import socket
 import time
@@ -13,13 +14,18 @@ from pathlib import Path
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
 BANK_FILE = ROOT / "bank.json"
+
+# 页面存活追踪：每个标签页一个 ID，全部离线后服务自动退出
+_tabs: dict = {}
+_exitAt: float | None = None
+_startedAt = time.time()
 
 app = FastAPI(title="Interview Copilot", docs_url=None, redoc_url=None)
 
@@ -238,6 +244,57 @@ async def bank_clear():
     return {"ok": True}
 
 
+# ── 页面存活心跳：所有页面关闭后自动退出服务 ──
+@app.post("/api/alive")
+async def alive(request: Request):
+    global _exitAt
+    tab = None
+    try:
+        body = await request.body()
+        if body:
+            tab = json.loads(body).get("tab")
+    except Exception:
+        pass
+    if tab:
+        _tabs[tab] = time.time()
+    _exitAt = None
+    return {"ok": True, "tabs": len(_tabs)}
+
+
+@app.post("/api/bye")
+async def bye(request: Request):
+    global _exitAt
+    tab = None
+    try:
+        body = await request.body()
+        if body:
+            tab = json.loads(body).get("tab")
+    except Exception:
+        pass
+    if tab and tab in _tabs:
+        del _tabs[tab]
+    if not _tabs:
+        _exitAt = time.time() + 3  # 3 秒宽限：F5 刷新时新页面会立刻报活并取消
+    return {"ok": True}
+
+
+def _watchdog():
+    global _exitAt
+    while True:
+        time.sleep(1)
+        now = time.time()
+        for t in [t for t, ts in _tabs.items() if now - ts > 90]:
+            _tabs.pop(t, None)
+        if _tabs and now - max(_tabs.values()) > 90:
+            _tabs.clear()
+        if _exitAt and now >= _exitAt and not _tabs:
+            print("所有页面已关闭，服务自动退出")
+            os._exit(0)
+        if not _tabs and now - _startedAt > 90:
+            print("启动后一直没有页面连接，服务自动退出")
+            os._exit(0)
+
+
 # ── 页面 ──
 @app.get("/")
 async def index():
@@ -251,6 +308,7 @@ if __name__ == "__main__":
     import webbrowser
 
     URL = "http://localhost:8787"
+    dev_mode = "--no-open" in sys.argv
 
     def already_up() -> bool:
         try:
@@ -264,7 +322,9 @@ if __name__ == "__main__":
         webbrowser.open(URL)
         raise SystemExit(0)
 
-    if "--no-open" not in sys.argv:
+    if not dev_mode:
+        # 页面全部关闭后自动退出（--no-open 开发模式下不启用）
+        threading.Thread(target=_watchdog, daemon=True).start()
         threading.Timer(1.5, lambda: webbrowser.open(URL)).start()
 
     uvicorn.run(app, host="0.0.0.0", port=8787, log_level="info")

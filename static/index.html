@@ -658,6 +658,23 @@ async function pollRelay() {
 setInterval(pollRelay, 1500);
 pollRelay();
 
+/* ---- 页面心跳：所有标签页关闭后，服务自动退出 ---- */
+const TAB_ID = sessionStorage.getItem('iv_tab') || (() => {
+  const id = Math.random().toString(36).slice(2, 10);
+  sessionStorage.setItem('iv_tab', id);
+  return id;
+})();
+async function alivePing() {
+  try {
+    await fetch(`${API}/api/alive`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tab: TAB_ID }) });
+  } catch {}
+}
+alivePing();
+setInterval(alivePing, 5000);
+window.addEventListener('pagehide', () => {
+  navigator.sendBeacon(`${API}/api/bye`, JSON.stringify({ tab: TAB_ID }));
+});
+
 /* ---- 语音识别 ---- */
 let recog = null, recogOn = false, finalText = '', silenceTimer = null, paused = false;
 const RESUME_KEYWORDS = ['下一题', '继续'];
