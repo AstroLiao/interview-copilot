@@ -43,6 +43,15 @@
   svg.ic { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
   button { touch-action: manipulation; }
 
+  /* 手机位模式：内容锚定左侧，右侧留给立着的手机 */
+  body.leftmode .stage-inner,
+  body.leftmode .dock-inner,
+  body.leftmode .dock-status {
+    width: min(740px, 42vw);
+    margin: 0;
+    padding-left: clamp(18px, 2.3vw, 44px);
+  }
+
   /* ── 顶栏：会话 + 抽屉开关 ── */
   header {
     height: 50px; flex-shrink: 0; display: flex; align-items: center; gap: 10px;
@@ -398,6 +407,11 @@
       <div class="tip" id="resume-status">存在本地浏览器。面试前把简历解析进来，回答会基于你的真实经历。</div>
     </div>
     <div class="pane" id="pane-cfg">
+      <div style="margin-bottom:12px">
+        <label class="switch" style="color:var(--text-2)">
+          <input type="checkbox" id="leftmode-toggle" checked><span class="track"></span>提词区左移（右侧留给手机）
+        </label>
+      </div>
       <div class="field"><label class="field-label">Base URL</label><input class="input" id="cfg-base" placeholder="https://ark.cn-beijing.volces.com/api/coding/v3…"></div>
       <div class="field"><label class="field-label">API Key</label><input class="input" id="cfg-key" type="password" placeholder="sk-012345679… / ark-012345679…" autocomplete="off" spellcheck="false"></div>
       <div class="field"><label class="field-label">模型</label><input class="input" id="cfg-model" placeholder="ep-xxx / deepseek-v4-flash / gpt-4o…" autocomplete="off" spellcheck="false"></div>
@@ -500,6 +514,7 @@ let cfg = load('iv_cfg', { base: 'https://ark.cn-beijing.volces.com/api/coding/v
 let background = load('iv_bg', '');
 let brief = load('iv_brief', '');
 let jd = load('iv_jd', '');
+let leftmode = load('iv_leftmode', true);
 let sessions = load('iv_sessions', {});
 let curId = load('iv_cur', '');
 let chatLog = [];
@@ -562,6 +577,9 @@ $('cfg-temp').value = cfg.temperature ?? 0.7; $('cfg-maxtok').value = cfg.maxTok
 $('bg').value = background;
 $('brief').value = brief;
 $('jd').value = jd;
+document.body.classList.toggle('leftmode', leftmode);
+$('leftmode-toggle').checked = leftmode;
+$('jd').value = jd;
 if (!hasSR) { $('mic-btn').style.display = 'none'; $('mic-text').textContent = '浏览器不支持语音'; }
 if (isPhone) {
   $('send-btn').style.display = 'inline-flex';
@@ -592,6 +610,11 @@ $('cfg-thinking').addEventListener('change', () => { cfg = { ...cfg, thinking: $
 $('bg').addEventListener('input', () => { background = $('bg').value; save('iv_bg', background); });
 $('brief').addEventListener('input', () => { brief = $('brief').value; save('iv_brief', brief); });
 $('jd').addEventListener('input', () => { jd = $('jd').value; save('iv_jd', jd); });
+$('leftmode-toggle').addEventListener('change', () => {
+  leftmode = $('leftmode-toggle').checked;
+  save('iv_leftmode', leftmode);
+  document.body.classList.toggle('leftmode', leftmode);
+});
 
 /* 问题输入：自动增高 + Enter 生成 */
 function autoGrow() {
